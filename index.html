@@ -78,6 +78,10 @@
   .step input{flex:1;min-width:0;width:100%;border:0;background:transparent;text-align:center;font-size:18px;font-weight:600;padding:12px 0;font-family:'Barlow Condensed',sans-serif}
   .step input:focus{outline:none}
   .step:focus-within{outline:3px solid var(--collar)}
+  .rowgrid{display:grid;grid-template-columns:1fr 1fr 1fr 40px;gap:8px;align-items:end;margin-bottom:8px}
+  .rowx{width:40px;height:48px;border:0;background:transparent;font-size:22px;color:var(--muted);border-radius:10px;padding:0}
+  .rowx:disabled{opacity:.25}
+  .addrow{width:100%;min-height:46px;margin-top:4px;border:1px dashed var(--muted);background:transparent;border-radius:10px;font-weight:600;color:var(--ink)}
   .field{margin-bottom:16px}
   .primary{width:100%;min-height:54px;border:0;border-radius:12px;background:var(--collar);color:#142029;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:22px;letter-spacing:.02em}
   .primary:active{transform:scale(.99)}
@@ -335,12 +339,12 @@ function Dashboard({ entries, prefs, goLog, loadSample }) {
 }
 
 /* ---------- Stepper input ---------- */
-function Stepper({ label, value, onChange, step, min=0 }) {
+function Stepper({ label, value, onChange, step, min=0, showLabel=true }) {
   const n = parseFloat(value);
   const bump = d => { const base = isNaN(n) ? 0 : n; onChange(String(Math.max(min, Math.round((base+d)*100)/100))); };
   return (
     <div>
-      <label className="f">{label}</label>
+      {showLabel && <label className="f">{label}</label>}
       <div className="step">
         <button type="button" aria-label={`Decrease ${label}`} onClick={() => bump(-step)}>−</button>
         <input inputMode="decimal" value={value} onChange={e => onChange(e.target.value)} aria-label={label}/>
@@ -375,19 +379,27 @@ function Log({ entries, setEntries, form, setForm, unit, toast }) {
 
   const onExercise = v => {
     const patch = { exercise: v };
-    const last = [...entries].filter(e => e.exercise.toLowerCase() === v.trim().toLowerCase())
-      .sort((a,b) => a.date < b.date ? 1 : -1)[0];
-    if (last) Object.assign(patch, { muscle:last.muscle, sets:String(last.sets), reps:String(last.reps), weight:String(last.weight) });
+    const matches = entries.filter(e => e.exercise.toLowerCase() === v.trim().toLowerCase());
+    if (matches.length) {
+      const lastDate = matches.reduce((d,e) => e.date > d ? e.date : d, '');
+      const lastRows = matches.filter(e => e.date === lastDate);
+      patch.muscle = lastRows[0].muscle;
+      patch.rows = lastRows.map(e => ({ id:uid(), sets:String(e.sets), reps:String(e.reps), weight:String(e.weight) }));
+    }
     set(patch);
   };
 
+  const setRow = (i, p) => set({ rows: form.rows.map((r,j) => j === i ? {...r, ...p} : r) });
+  const addRow = () => { const l = form.rows[form.rows.length-1]; set({ rows: [...form.rows, { ...l, id:uid() }] }); };
+  const removeRow = i => { if (form.rows.length > 1) set({ rows: form.rows.filter((_,j) => j !== i) }); };
+
   const save = () => {
-    const sets = parseFloat(form.sets), reps = parseFloat(form.reps), weight = parseFloat(form.weight) || 0;
     const exercise = form.exercise.trim();
+    const rows = form.rows.map(r => ({ sets:parseFloat(r.sets), reps:parseFloat(r.reps), weight:parseFloat(r.weight) || 0 }));
     if (!exercise) return toast('Enter an exercise name');
-    if (!(sets > 0) || !(reps > 0)) return toast('Sets and reps must be above 0');
-    setEntries(es => [...es, { id:uid(), date:form.date, muscle:form.muscle, exercise, sets, reps, weight }]);
-    toast(`Added ${exercise}: ${sets} × ${reps}`);
+    if (rows.some(r => !(r.sets > 0) || !(r.reps > 0))) return toast('Each row needs sets and reps above 0');
+    setEntries(es => [...es, ...rows.map(r => ({ id:uid(), date:form.date, muscle:form.muscle, exercise, ...r }))]);
+    toast(`Added ${exercise}: ${rows.length} ${rows.length === 1 ? 'row' : 'rows'}`);
   };
 
   const dayEntries = entries.filter(e => e.date === form.date).reverse();
@@ -416,13 +428,19 @@ function Log({ entries, setEntries, form, setForm, unit, toast }) {
             autoCapitalize="words" autoCorrect="off" onChange={e => onExercise(e.target.value)}/>
           <datalist id="ex-list">{names.map(n => <option key={n} value={n}/>)}</datalist>
         </div>
-        <div className="grid3 field">
-          <Stepper label="Sets" value={form.sets} onChange={v => set({sets:v})} step={1}/>
-          <Stepper label="Reps" value={form.reps} onChange={v => set({reps:v})} step={1}/>
-          <Stepper label={`Weight (${unit})`} value={form.weight} onChange={v => set({weight:v})} step={step}/>
+        <div className="field">
+          {form.rows.map((r, i) => (
+            <div className="rowgrid" key={r.id}>
+              <Stepper label="Sets" showLabel={i === 0} value={r.sets} onChange={v => setRow(i, {sets:v})} step={1}/>
+              <Stepper label="Reps" showLabel={i === 0} value={r.reps} onChange={v => setRow(i, {reps:v})} step={1}/>
+              <Stepper label={`Weight (${unit})`} showLabel={i === 0} value={r.weight} onChange={v => setRow(i, {weight:v})} step={step}/>
+              <button type="button" className="rowx" aria-label={`Remove row ${i+1}`} disabled={form.rows.length === 1} onClick={() => removeRow(i)}>×</button>
+            </div>
+          ))}
+          <button type="button" className="addrow" onClick={addRow}>+ Add another weight</button>
         </div>
         <button className="primary" onClick={save}>Add to log</button>
-        <p className="note">Muscle, exercise and numbers stay filled in after you add, so repeat entries take one tap. Picking an exercise you've logged before fills in your last numbers.</p>
+        <p className="note">Each row is saved as its own entry for this exercise. Muscle, exercise and rows stay filled in after you add. Picking an exercise you've logged before fills in the rows from your last session.</p>
       </div>
 
       <h2>{form.date === today() ? 'Today' : longDay(form.date)}</h2>
@@ -516,7 +534,7 @@ function App() {
   const [tab, setTab] = useState('dash');
   const [msg, setMsg] = useState(null);
   const timer = useRef();
-  const [form, setForm] = useState({ date:today(), muscle:'Chest', exercise:'', sets:'3', reps:'10', weight:'' });
+  const [form, setForm] = useState({ date:today(), muscle:'Chest', exercise:'', rows:[{ id:uid(), sets:'3', reps:'10', weight:'' }] });
 
   useEffect(() => store.set('vol.entries', JSON.stringify(entries)), [entries]);
   useEffect(() => store.set('vol.prefs', JSON.stringify(prefs)), [prefs]);
