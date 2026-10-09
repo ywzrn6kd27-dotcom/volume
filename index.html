@@ -139,6 +139,10 @@
   .step.small button{width:44px;min-height:44px}
   .step .tval{flex:1;display:flex;align-items:center;justify-content:center;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:18px}
   .tabbar .in-tabs button{font-size:18px;padding-left:2px;padding-right:2px}
+  .steps{margin:0 0 14px;padding-left:20px;color:var(--muted);font-size:15px}
+  .steps li{margin-bottom:4px}
+  .rvtop{gap:8px}
+  .rvtop .chip{padding:6px 12px;min-height:38px}
   .field{margin-bottom:16px}
   .primary{width:100%;min-height:54px;border:0;border-radius:12px;background:var(--collar);color:#142029;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:22px;letter-spacing:.02em}
   .primary:active{transform:scale(.99)}
@@ -224,7 +228,7 @@ const fmt = n => {
   return String(Math.round(n));
 };
 const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,7);
-const valueOf = (e, metric) => metric === 'sets' ? e.sets : e.sets * e.reps * e.weight;
+const valueOf = (e, metric) => metric === 'sets' ? e.sets : e.sets * e.reps * e.weight * (e.mult || 1);
 
 /* ---------- sample data ---------- */
 function sampleData() {
@@ -267,7 +271,7 @@ const daysBetween = (a, b) => Math.round((fromStr(b) - fromStr(a)) / 86400000);
 const ago = s => { const d = daysBetween(s, today()); return d <= 0 ? 'today' : d === 1 ? 'yesterday' : d < 14 ? `${d} days ago` : `${Math.round(d / 7)} weeks ago`; };
 
 const norm = s => s.trim().toLowerCase();
-const rowText = r => `${r.sets}×${r.reps}${r.weight ? ` @ ${r.weight}` : ''}`;
+const rowText = r => `${r.sets}×${r.reps}${r.weight ? ` @ ${r.weight}${r.mult === 2 ? '/side' : ''}` : ''}`;
 const e1rm = (w, r) => w > 0 ? (r <= 1 ? w : w * (1 + r / 30)) : 0;   // Epley estimate
 
 // One option per distinct exercise: latest muscle, last session's rows, how often logged
@@ -304,9 +308,9 @@ function bests(entries, name) {
 
 const csvCell = v => { const s = String(v); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
 function toCsv(entries, unit) {
-  const head = ['date', 'muscle', 'exercise', 'sets', 'reps', 'weight', 'unit', 'volume'];
+  const head = ['date', 'muscle', 'exercise', 'sets', 'reps', 'weight', 'unit', 'per_side', 'volume'];
   const rows = [...entries].sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0)
-    .map(e => [e.date, e.muscle, e.exercise, e.sets, e.reps, e.weight, unit, e.sets * e.reps * e.weight]);
+    .map(e => [e.date, e.muscle, e.exercise, e.sets, e.reps, e.weight, unit, e.mult === 2 ? 'yes' : 'no', e.sets * e.reps * e.weight * (e.mult || 1)]);
   return '\uFEFF' + [head, ...rows].map(r => r.map(csvCell).join(',')).join('\r\n');
 }
 
@@ -605,7 +609,7 @@ function EntryRow({ e, unit, onDelete, onEdit, showDate }) {
       <span className="dot" style={{background:MCOLOR[e.muscle]}}/>
       <button type="button" className="grow ent-btn" onClick={onEdit} aria-label={`Edit ${e.exercise}`}>
         <span className="ex">{e.exercise}</span>
-        <span className="meta">{e.muscle} · {e.sets} × {e.reps}{e.weight ? ` @ ${e.weight} ${unit}` : ' bodyweight'}{showDate ? ` · ${short(e.date)}` : ''}</span>
+        <span className="meta">{e.muscle} · {e.sets} × {e.reps}{e.weight ? ` @ ${e.weight} ${unit}${e.mult === 2 ? ' per side' : ''}` : ' bodyweight'}{showDate ? ` · ${short(e.date)}` : ''}</span>
       </button>
       <button className="x" aria-label={`Delete ${e.exercise}`} onClick={onDelete}>×</button>
     </div>
@@ -697,7 +701,7 @@ function ExercisePicker({ id, value, onChange, onPick, index, muscle, placeholde
 function EditSheet({ entry, entries, unit, toast, onSave, onDelete, onClose }) {
   const [f, setF] = useState({
     date: entry.date, muscle: entry.muscle, exercise: entry.exercise,
-    sets: String(entry.sets), reps: String(entry.reps), weight: entry.weight ? String(entry.weight) : '',
+    sets: String(entry.sets), reps: String(entry.reps), weight: entry.weight ? String(entry.weight) : '', perSide: entry.mult === 2,
   });
   const index = useMemo(() => buildIndex(entries), [entries]);
   const set = p => setF(x => ({ ...x, ...p }));
@@ -710,7 +714,7 @@ function EditSheet({ entry, entries, unit, toast, onSave, onDelete, onClose }) {
     const exercise = f.exercise.trim();
     if (!exercise) return toast('Enter an exercise name');
     if (!(sets > 0) || !(reps > 0)) return toast('Sets and reps must be above 0');
-    onSave({ ...entry, date:f.date, muscle:f.muscle, exercise, sets, reps, weight });
+    onSave({ ...entry, date:f.date, muscle:f.muscle, exercise, sets, reps, weight, mult: f.perSide ? 2 : 1 });
   };
 
   return (
@@ -742,6 +746,9 @@ function EditSheet({ entry, entries, unit, toast, onSave, onDelete, onClose }) {
             <Stepper label="Sets" value={f.sets} onChange={v => set({ sets:v })} step={1}/>
             <Stepper label="Reps" value={f.reps} onChange={v => set({ reps:v })} step={1}/>
             <Stepper label={`Weight (${unit})`} value={f.weight} onChange={v => set({ weight:v })} step={step}/>
+          </div>
+          <div style={{marginTop:14}}>
+            <button type="button" className={'chip' + (f.perSide ? ' on' : '')} aria-pressed={f.perSide} onClick={() => set({ perSide: !f.perSide })}>Per side ×2</button>
           </div>
         </div>
       </div>
@@ -819,13 +826,52 @@ function getLines(data) {
   return { lines: (data.text || '').split('\n').map((t,i) => ({ text:t.trim(), x0:0, y0:i })).filter(l => l.text), geom: false };
 }
 
+const monIdx = s => MON.findIndex(x => x.toLowerCase() === s.slice(0, 3).toLowerCase());
+const mkDate = (y, m, d) => { const dt = new Date(y, m, d); return dt.getFullYear() === y && dt.getMonth() === m && dt.getDate() === d ? toStr(dt) : null; };
+const MONRE = '(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)';
+
+// Finds a workout date such as "Oct 3, 2026", "3 Oct 2026", "2026-10-03", "10/3/2026" or "Oct 3"
+function parseDateLine(t) {
+  let m = t.match(new RegExp('\\b' + MONRE + '[a-z]*\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(20\\d{2})\\b', 'i'));
+  if (m) return mkDate(+m[3], monIdx(m[1]), +m[2]);
+  m = t.match(new RegExp('\\b(\\d{1,2})\\s+' + MONRE + '[a-z]*\\.?,?\\s+(20\\d{2})\\b', 'i'));
+  if (m) return mkDate(+m[3], monIdx(m[2]), +m[1]);
+  m = t.match(/\b(20\d{2})-(\d{2})-(\d{2})\b/);
+  if (m) return mkDate(+m[1], +m[2] - 1, +m[3]);
+  m = t.match(/\b(\d{1,2})\/(\d{1,2})\/(20\d{2})\b/);
+  if (m) return mkDate(+m[3], +m[1] - 1, +m[2]);
+  m = t.match(new RegExp('\\b' + MONRE + '[a-z]{0,6}\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?!\\s*(?:reps?|lbs?|kg|x|×|sets?))'));
+  if (m) {
+    const now = new Date(); let d = mkDate(now.getFullYear(), monIdx(m[1]), +m[2]);
+    if (d && d > addDays(today(), 1)) d = mkDate(now.getFullYear() - 1, monIdx(m[1]), +m[2]);
+    return d;
+  }
+  return null;
+}
+
+const perSideFor = (name, entries) => { const ls = lastSession(entries, name); return !!ls && ls.rows[0].mult === 2; };
+
+// Turns parsed exercises into the editable review model
+function finishSession(name, date, unit, text, exs, entries) {
+  return {
+    id: uid(), name, date, unit, text,
+    exercises: exs.filter(e => e.rows.length).map(e => {
+      const dup = e.name && entries.some(x => x.date === date && norm(x.exercise) === norm(e.name));
+      return {
+        id: e.id, name: e.name, muscle: guessMuscle(e.name, entries), perSide: perSideFor(e.name, entries), include: !dup,
+        rows: e.rows.map(r => ({ id:r.id, sets:String(r.sets), reps:String(r.reps), weight: r.weight ? String(r.weight) : '' })),
+      };
+    }),
+  };
+}
+
+// OCR route (image scan)
 function buildSession(name, data, width, entries) {
   const text = data.text || '';
   const { lines, geom } = getLines(data);
-  const xs = lines.filter(l => SET_RE.test(l.text)).map(l => l.x0).sort((a,b) => a - b);
+  const xs = lines.filter(l => SET_RE.test(l.text)).map(l => l.x0).sort((a, b) => a - b);
   const mx = xs.length ? xs[Math.floor(xs.length / 2)] : 0;
   const tol = width * 0.06;
-  // Exercise names sit left-aligned with the set lines; this skips thumbnails and header text
   const isName = l => !SET_RE.test(l.text) && (!geom || Math.abs(l.x0 - mx) <= tol) &&
     (l.text.match(/[A-Za-z]/g) || []).length >= 3 && !/exercise/i.test(l.text);
 
@@ -837,42 +883,123 @@ function buildSession(name, data, width, entries) {
       const reps = +m[1], weight = m[2] ? parseFloat(m[2].replace(',', '.')) : 0;
       if (m[3] && !unitSeen) unitSeen = /kg/i.test(m[3]) ? 'kg' : 'lb';
       const last = cur.rows[cur.rows.length - 1];
-      if (last && last.reps === reps && last.weight === weight) last.sets++;   // identical consecutive sets collapse into one row
+      if (last && last.reps === reps && last.weight === weight) last.sets++;
       else cur.rows.push({ id:uid(), sets:1, reps, weight });
     } else if (isName(l)) {
       if (cur && cur.rows.length === 0) cur.name = cleanName(l.text);
       else { cur = { id:uid(), name:cleanName(l.text), rows:[] }; exs.push(cur); }
     }
   }
+  return finishSession(name, parseDateLine(text) || today(), unitSeen, text, exs, entries);
+}
 
-  let date = today();
-  const dm = text.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2}),?\s+(20\d{2})/i);
-  if (dm) {
-    const mi = MON.findIndex(x => x.toLowerCase() === dm[1].toLowerCase());
-    date = toStr(new Date(+dm[3], mi, +dm[2]));
+/* ---- Pasted text route (iOS Live Text: touch and hold text in Photos, Select All, Copy) ---- */
+// "8 reps x 347 lb" (weight optional), "347 lb x 8" or "8 x 347 lb"
+const SET_G = /(\d{1,3})\s*reps?\b(?:\s*[x×*]\s*(\d{1,4}(?:[.,]\d+)?)\s*(lbs?|ibs?|1bs?|kgs?)?)?|(\d{1,4}(?:[.,]\d+)?)\s*(lbs?|kgs?)\s*[x×*]\s*(\d{1,3})\b|(\d{1,3})\s*[x×]\s*(\d{1,4}(?:[.,]\d+)?)\s*(lbs?|kgs?)\b/gi;
+const setCount = e => e.rows.reduce((n, r) => n + r.sets, 0);
+const isNameText = n => {
+  const letters = (n.match(/[A-Za-z]/g) || []).length;
+  return letters >= 3 && letters / n.length >= 0.6 && !/exercises?\b/i.test(n) &&
+    !/^(workout|sets?|reps?|notes?|edit|done|share|add|back|save|finish|history|today)$/i.test(n);
+};
+// Consecutive repeats of the same exercise (a screenshot boundary) keep the more complete one
+function dedupeAdjacent(exs) {
+  const out = [];
+  exs.forEach(e => {
+    const p = out[out.length - 1];
+    if (p && e.name && norm(p.name) === norm(e.name)) { if (setCount(e) > setCount(p)) out[out.length - 1] = e; }
+    else out.push(e);
+  });
+  return out;
+}
+
+function parseText(text, entries) {
+  const sessions = []; let cur = null;
+  const start = date => { cur = { date, exs:[], unit:null, lines:[], ex:null }; sessions.push(cur); };
+  const newEx = name => { if (!cur) start(today()); cur.ex = { id:uid(), name, rows:[] }; cur.exs.push(cur.ex); };
+  const addName = t => {
+    const n = cleanName(t);
+    if (!isNameText(n)) return;
+    if (!cur) start(today());
+    if (cur.ex && cur.ex.rows.length === 0) cur.ex.name = n; else newEx(n);
+  };
+  const addSet = m => {
+    if (!cur) start(today());
+    if (!cur.ex) newEx('');
+    let reps, wRaw, u;
+    if (m[1] !== undefined) { reps = +m[1]; wRaw = m[2]; u = m[3]; }
+    else if (m[4] !== undefined) { reps = +m[6]; wRaw = m[4]; u = m[5]; }
+    else { reps = +m[7]; wRaw = m[8]; u = m[9]; }
+    const weight = wRaw ? parseFloat(wRaw.replace(',', '.')) : 0;
+    if (u && !cur.unit) cur.unit = /kg/i.test(u) ? 'kg' : 'lb';
+    const rows = cur.ex.rows, last = rows[rows.length - 1];
+    if (last && last.reps === reps && last.weight === weight) last.sets++;   // identical consecutive sets collapse
+    else rows.push({ id:uid(), sets:1, reps, weight });
+  };
+
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.replace(/[\u200B-\u200F\u2060\uFEFF]/g, '').trim();
+    if (!line) continue;
+    const d = parseDateLine(line);
+    if (d) {
+      if (cur && cur.exs.length === 0) cur.date = d; else start(d);
+      cur.lines.push(line);
+      continue;
+    }
+    const ms = [...line.matchAll(SET_G)];
+    if (!ms.length) addName(line);
+    else {
+      let pos = 0;
+      ms.forEach(m => { const before = line.slice(pos, m.index); if (before.trim()) addName(before); addSet(m); pos = m.index + m[0].length; });
+      const tail = line.slice(pos); if (tail.trim()) addName(tail);
+    }
+    if (cur) cur.lines.push(line);
   }
 
-  return {
-    id: uid(), name, date, unit: unitSeen, text,
-    exercises: exs.filter(e => e.rows.length).map(e => {
-      const dup = e.name && entries.some(x => x.date === date && x.exercise.toLowerCase() === e.name.toLowerCase());
-      return {
-        id: e.id, name: e.name, muscle: guessMuscle(e.name, entries), include: !dup,
-        rows: e.rows.map(r => ({ id:r.id, sets:String(r.sets), reps:String(r.reps), weight: r.weight ? String(r.weight) : '' })),
-      };
-    }),
-  };
+  // Screenshots of the same workout (same date) are combined
+  const byDate = new Map();
+  sessions.forEach(s => {
+    const exs = dedupeAdjacent(s.exs.filter(e => e.rows.length));
+    if (!exs.length) return;
+    const m = byDate.get(s.date);
+    if (!m) { byDate.set(s.date, { date:s.date, unit:s.unit, lines:[...s.lines], exs }); return; }
+    m.lines.push('', ...s.lines); m.unit = m.unit || s.unit;
+    exs.forEach(e => {
+      const i = e.name ? m.exs.findIndex(x => norm(x.name) === norm(e.name)) : -1;
+      if (i === -1) m.exs.push(e); else if (setCount(e) > setCount(m.exs[i])) m.exs[i] = e;
+    });
+  });
+  return [...byDate.values()].map(m => finishSession('Pasted text', m.date, m.unit, m.lines.join('\n'), m.exs, entries));
 }
 
 function ImportFlow({ entries, setEntries, unit, toast }) {
   const fileRef = useRef();
   const [busy, setBusy] = useState(null);
   const [sessions, setSessions] = useState(null);
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState('');
 
   useEffect(() => {
-    document.body.style.overflow = (sessions || busy) ? 'hidden' : '';
+    document.body.style.overflow = (sessions || busy || pasteOpen) ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
-  }, [sessions, busy]);
+  }, [sessions, busy, pasteOpen]);
+
+  const preview = useMemo(() => pasteOpen && pasteText.trim() ? parseText(pasteText, entries) : [], [pasteOpen, pasteText, entries]);
+  const pvEx = preview.reduce((n, s) => n + s.exercises.length, 0);
+  const pvSets = preview.reduce((n, s) => n + s.exercises.reduce((m, x) => m + x.rows.length, 0), 0);
+
+  const pasteClip = async () => {
+    try {
+      const t = await navigator.clipboard.readText();
+      if (!t || !t.trim()) return toast('The clipboard is empty');
+      setPasteText(p => p.trim() ? p.replace(/\s+$/, '') + '\n\n' + t : t);
+    } catch (e) { toast('Touch and hold in the box, then tap Paste'); }
+  };
+  const readPasted = () => {
+    const out = parseText(pasteText, entries);
+    if (!out.length) return toast('No sets found. Copy the whole list, with lines like "8 reps x 347 lb".');
+    setSessions(out); setPasteOpen(false); setPasteText('');
+  };
 
   const onFiles = async ev => {
     const files = [...ev.target.files]; ev.target.value = '';
@@ -904,12 +1031,12 @@ function ImportFlow({ entries, setEntries, unit, toast }) {
   const upSession = (sid, fn) => setSessions(ss => ss.map(s => s.id === sid ? fn(s) : s));
   const upEx = (sid, eid, p) => upSession(sid, s => ({ ...s, exercises: s.exercises.map(x => x.id === eid ? { ...x, ...p } : x) }));
   const upRow = (sid, eid, rid, p) => upSession(sid, s => ({ ...s, exercises: s.exercises.map(x => x.id === eid ? { ...x, rows: x.rows.map(r => r.id === rid ? { ...r, ...p } : r) } : x) }));
-  const addRow = (sid, eid) => upSession(sid, s => ({ ...s, exercises: s.exercises.map(x => x.id === eid ? { ...x, rows: [...x.rows, { ...x.rows[x.rows.length-1], id:uid() }] } : x) }));
+  const addRow = (sid, eid) => upSession(sid, s => ({ ...s, exercises: s.exercises.map(x => x.id === eid ? { ...x, rows: [...x.rows, { ...x.rows[x.rows.length - 1], id:uid() }] } : x) }));
   const delRow = (sid, eid, rid) => upSession(sid, s => ({ ...s, exercises: s.exercises.map(x => x.id === eid && x.rows.length > 1 ? { ...x, rows: x.rows.filter(r => r.id !== rid) } : x) }));
   const delEx = (sid, eid) => upSession(sid, s => ({ ...s, exercises: s.exercises.filter(x => x.id !== eid) }));
-  const addEx = sid => upSession(sid, s => ({ ...s, exercises: [...s.exercises, { id:uid(), name:'', muscle:'', include:true, rows:[{ id:uid(), sets:'1', reps:'10', weight:'' }] }] }));
+  const addEx = sid => upSession(sid, s => ({ ...s, exercises: [...s.exercises, { id:uid(), name:'', muscle:'', perSide:false, include:true, rows:[{ id:uid(), sets:'1', reps:'10', weight:'' }] }] }));
 
-  const isDup = (s, ex) => ex.name.trim() && entries.some(e => e.date === s.date && e.exercise.toLowerCase() === ex.name.trim().toLowerCase());
+  const isDup = (s, ex) => ex.name.trim() && entries.some(e => e.date === s.date && norm(e.exercise) === norm(ex.name));
   const count = sessions ? sessions.reduce((n, s) => n + s.exercises.filter(x => x.include).reduce((m, x) => m + x.rows.length, 0), 0) : 0;
 
   const commit = () => {
@@ -922,7 +1049,7 @@ function ImportFlow({ entries, setEntries, unit, toast }) {
       for (const r of ex.rows) {
         const sets = parseFloat(r.sets), reps = parseFloat(r.reps), weight = parseFloat(r.weight) || 0;
         if (!(sets > 0) || !(reps > 0)) return toast(`Check the sets and reps for ${name}`);
-        out.push({ id:uid(), date:s.date, muscle:ex.muscle, exercise:name, sets, reps, weight });
+        out.push({ id:uid(), date:s.date, muscle:ex.muscle, exercise:name, sets, reps, weight, mult: ex.perSide ? 2 : 1 });
       }
     }
     if (!out.length) return toast('Nothing selected to import');
@@ -933,14 +1060,43 @@ function ImportFlow({ entries, setEntries, unit, toast }) {
 
   return (
     <>
-      <div className="card" style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12}}>
-        <div>
-          <b>Import from screenshots</b>
-          <p className="note" style={{margin:'2px 0 0'}}>Scan one or more workout screenshots. You review everything before it's saved.</p>
+      <div className="card">
+        <b>Import workouts</b>
+        <p className="note" style={{margin:'2px 0 10px'}}>Copy the text from a workout screenshot and paste it here. You review everything before it's saved.</p>
+        <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
+          <button className="btn-sm go" onClick={() => setPasteOpen(true)}>Paste text</button>
+          <button className="btn-sm" onClick={() => fileRef.current && fileRef.current.click()}>Scan image (less accurate)</button>
         </div>
-        <button className="ghost" onClick={() => fileRef.current && fileRef.current.click()}>Choose</button>
       </div>
       <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={onFiles}/>
+
+      {pasteOpen && (
+        <div className="overlay" role="dialog" aria-label="Paste workout text">
+          <div className="ov-in">
+            <h1 style={{marginBottom:10}}>Paste text</h1>
+            <ol className="steps">
+              <li>Open the screenshot in Photos.</li>
+              <li>Touch and hold the text, tap Select All, then Copy.</li>
+              <li>Come back and paste it below. Do the same for more screenshots and paste them one after another.</li>
+            </ol>
+            <button className="btn-sm" onClick={pasteClip}>Paste from clipboard</button>
+            <textarea className="in" style={{marginTop:12,minHeight:240}} value={pasteText} onChange={e => setPasteText(e.target.value)}
+              placeholder={'Oct 3, 2026, 11:26 AM\nLeg Press\n8 reps x 347 lb\n6 reps x 437 lb'} aria-label="Pasted workout text"/>
+            <p className="note" role="status">
+              {!pasteText.trim() ? 'Pasted text will be read for exercises, sets, weights and the workout date.'
+                : pvSets === 0 ? 'No sets found yet. Lines should look like "8 reps x 347 lb".'
+                : `Found ${pvEx} ${pvEx === 1 ? 'exercise' : 'exercises'} and ${pvSets} ${pvSets === 1 ? 'row' : 'rows'} across ${preview.length} ${preview.length === 1 ? 'workout' : 'workouts'}. You'll review them next.`}
+            </p>
+          </div>
+          <div className="ov-foot">
+            <div className="inner">
+              <button className="ghost" onClick={() => { setPasteOpen(false); }}>Cancel</button>
+              <button className="ghost" onClick={() => setPasteText('')} disabled={!pasteText}>Clear</button>
+              <button className="primary" disabled={pvSets === 0} onClick={readPasted}>Review</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {busy && (
         <div className="overlay center" role="status">
@@ -956,28 +1112,29 @@ function ImportFlow({ entries, setEntries, unit, toast }) {
         <div className="overlay">
           <div className="ov-in">
             <h1 style={{marginBottom:6}}>Review import</h1>
-            <p className="note" style={{marginTop:0,marginBottom:16}}>Scanning can misread text. Check each exercise, muscle and number. Nothing is saved until you tap Add.</p>
+            <p className="note" style={{marginTop:0,marginBottom:16}}>Reading can make mistakes. Check each exercise, muscle and number. Nothing is saved until you tap Add.</p>
 
             {sessions.map((s, si) => (
               <div className="card" key={s.id}>
-                <h2>{sessions.length > 1 ? `Screenshot ${si+1} of ${sessions.length}` : 'Screenshot'}</h2>
+                <h2>{sessions.length > 1 ? `Workout ${si + 1} of ${sessions.length}` : 'Workout'}</h2>
                 <div className="note" style={{margin:'-6px 0 12px',wordBreak:'break-all'}}>{s.name}</div>
-                <label className="f" htmlFor={'d'+s.id}>Workout date</label>
-                <input id={'d'+s.id} type="date" className="in" value={s.date} onChange={e => e.target.value && upSession(s.id, x => ({...x, date:e.target.value}))}/>
-                {s.unit && s.unit !== unit && <p className="warnline">This screenshot uses {s.unit} but the app is set to {unit}. Numbers import as shown, so edit them or change the unit in Settings first.</p>}
-                {s.exercises.length === 0 && <p className="note">No sets were found. Add exercises by hand below, or check the scanned text.</p>}
+                <label className="f" htmlFor={'d' + s.id}>Workout date</label>
+                <input id={'d' + s.id} type="date" className="in" value={s.date} onChange={e => e.target.value && upSession(s.id, x => ({ ...x, date:e.target.value }))}/>
+                {s.unit && s.unit !== unit && <p className="warnline">This text uses {s.unit} but the app is set to {unit}. Numbers import as shown, so edit them or change the unit in Settings first.</p>}
+                {s.exercises.length === 0 && <p className="note">No sets were found. Add exercises by hand below.</p>}
 
                 {s.exercises.map(ex => {
                   const dup = isDup(s, ex);
                   return (
                     <div key={ex.id} className={'rvex' + (ex.include ? '' : ' off')}>
                       <div className="rvtop">
-                        <button type="button" className={'chip' + (ex.include ? ' on' : '')} aria-pressed={ex.include} onClick={() => upEx(s.id, ex.id, {include:!ex.include})}>{ex.include ? '✓ Importing' : 'Skipped'}</button>
+                        <button type="button" className={'chip' + (ex.include ? ' on' : '')} aria-pressed={ex.include} onClick={() => upEx(s.id, ex.id, { include:!ex.include })}>{ex.include ? '✓ Importing' : 'Skipped'}</button>
+                        <button type="button" className={'chip' + (ex.perSide ? ' on' : '')} aria-pressed={!!ex.perSide} onClick={() => upEx(s.id, ex.id, { perSide:!ex.perSide })}>Per side ×2</button>
                         <button type="button" className="x" aria-label="Remove exercise" onClick={() => delEx(s.id, ex.id)}>×</button>
                       </div>
                       <input className="in" value={ex.name} placeholder="Exercise name" autoCapitalize="words" autoCorrect="off" aria-label="Exercise name"
                         onChange={e => { const name = e.target.value; upEx(s.id, ex.id, { name, ...(ex.muscle ? {} : { muscle: guessMuscle(name, entries) }) }); }}/>
-                      <select className="in" style={{marginTop:8}} value={ex.muscle} aria-label="Muscle" onChange={e => upEx(s.id, ex.id, {muscle:e.target.value})}>
+                      <select className="in" style={{marginTop:8}} value={ex.muscle} aria-label="Muscle" onChange={e => upEx(s.id, ex.id, { muscle:e.target.value })}>
                         <option value="">Choose muscle…</option>
                         {MUSCLES.map(m => <option key={m.id} value={m.id}>{m.id}</option>)}
                       </select>
@@ -985,10 +1142,10 @@ function ImportFlow({ entries, setEntries, unit, toast }) {
                       <div className="rvgrid head"><span style={{textAlign:'center'}}>Sets</span><span style={{textAlign:'center'}}>Reps</span><span style={{textAlign:'center'}}>Weight ({unit})</span><span/></div>
                       {ex.rows.map((r, ri) => (
                         <div className="rvgrid" key={r.id}>
-                          <input className="in" inputMode="decimal" value={r.sets} aria-label={`Row ${ri+1} sets`} onChange={e => upRow(s.id, ex.id, r.id, {sets:e.target.value})}/>
-                          <input className="in" inputMode="decimal" value={r.reps} aria-label={`Row ${ri+1} reps`} onChange={e => upRow(s.id, ex.id, r.id, {reps:e.target.value})}/>
-                          <input className="in" inputMode="decimal" value={r.weight} aria-label={`Row ${ri+1} weight`} onChange={e => upRow(s.id, ex.id, r.id, {weight:e.target.value})}/>
-                          <button type="button" className="rowx" aria-label={`Remove row ${ri+1}`} disabled={ex.rows.length === 1} onClick={() => delRow(s.id, ex.id, r.id)}>×</button>
+                          <input className="in" inputMode="decimal" value={r.sets} aria-label={`Row ${ri + 1} sets`} onChange={e => upRow(s.id, ex.id, r.id, { sets:e.target.value })}/>
+                          <input className="in" inputMode="decimal" value={r.reps} aria-label={`Row ${ri + 1} reps`} onChange={e => upRow(s.id, ex.id, r.id, { reps:e.target.value })}/>
+                          <input className="in" inputMode="decimal" value={r.weight} aria-label={`Row ${ri + 1} weight`} onChange={e => upRow(s.id, ex.id, r.id, { weight:e.target.value })}/>
+                          <button type="button" className="rowx" aria-label={`Remove row ${ri + 1}`} disabled={ex.rows.length === 1} onClick={() => delRow(s.id, ex.id, r.id)}>×</button>
                         </div>
                       ))}
                       <button type="button" className="addrow" onClick={() => addRow(s.id, ex.id)}>+ Add row</button>
@@ -997,10 +1154,12 @@ function ImportFlow({ entries, setEntries, unit, toast }) {
                 })}
 
                 <button type="button" className="addrow" onClick={() => addEx(s.id)}>+ Add exercise</button>
-                <details>
-                  <summary>Show scanned text</summary>
-                  <pre className="raw">{s.text || '(nothing detected)'}</pre>
-                </details>
+                {s.text && (
+                  <details>
+                    <summary>Show source text</summary>
+                    <pre className="raw">{s.text}</pre>
+                  </details>
+                )}
               </div>
             ))}
           </div>
@@ -1022,13 +1181,14 @@ function Log({ entries, setEntries, form, setForm, unit, toast, onEdit }) {
   const set = patch => setForm(f => ({ ...f, ...patch }));
   const index = useMemo(() => buildIndex(entries), [entries]);
 
-  const onExercise = (v, muscleHint) => {
+  const onExercise = (v, muscleHint, picked) => {
     const patch = { exercise: v };
     const ls = lastSession(entries, v, form.date) || lastSession(entries, v);
     if (ls) {
       patch.muscle = ls.rows[0].muscle;
+      patch.perSide = ls.rows[0].mult === 2;
       patch.rows = ls.rows.map(e => ({ id:uid(), sets:String(e.sets), reps:String(e.reps), weight:String(e.weight) }));
-    } else if (muscleHint) patch.muscle = muscleHint;
+    } else if (picked) { patch.perSide = false; if (muscleHint) patch.muscle = muscleHint; }
     set(patch);
   };
 
@@ -1052,7 +1212,7 @@ function Log({ entries, setEntries, form, setForm, unit, toast, onEdit }) {
       else if (newE > prior.e + 0.5) pr = `★ New est. 1RM PR: ${Math.round(newE)} ${unit}`;
     }
 
-    setEntries(es => [...es, ...rows.map(r => ({ id:uid(), date:form.date, muscle:form.muscle, exercise, ...r }))]);
+    setEntries(es => [...es, ...rows.map(r => ({ id:uid(), date:form.date, muscle:form.muscle, exercise, ...r, mult: form.perSide ? 2 : 1 }))]);
     if (pr) toast(`${pr} · ${exercise}`, 3800);
     else toast(`Added ${exercise}: ${rows.length} ${rows.length === 1 ? 'row' : 'rows'}`);
   };
@@ -1082,7 +1242,7 @@ function Log({ entries, setEntries, form, setForm, unit, toast, onEdit }) {
         </div>
         <div className="field">
           <label className="f" htmlFor="ex">Exercise</label>
-          <ExercisePicker id="ex" value={form.exercise} onChange={v => onExercise(v)} onPick={o => onExercise(o.name, o.muscle)}
+          <ExercisePicker id="ex" value={form.exercise} onChange={v => onExercise(v)} onPick={o => onExercise(o.name, o.muscle, true)}
             index={index} muscle={form.muscle} placeholder="Search or type an exercise"/>
           {ref && (
             <div className="lasttime">
@@ -1096,6 +1256,10 @@ function Log({ entries, setEntries, form, setForm, unit, toast, onEdit }) {
           )}
         </div>
         <div className="field">
+          <div style={{marginBottom:12}}>
+            <button type="button" className={'chip' + (form.perSide ? ' on' : '')} aria-pressed={!!form.perSide} onClick={() => set({ perSide: !form.perSide })}>Per side ×2</button>
+            {form.perSide && <p className="note" style={{marginTop:6,marginBottom:0}}>Enter the weight for one side. Tonnage counts it twice.</p>}
+          </div>
           {form.rows.map((r, i) => (
             <div className="rowgrid" key={r.id}>
               <Stepper label="Sets" showLabel={i === 0} value={r.sets} onChange={v => setRow(i, { sets:v })} step={1}/>
@@ -1148,7 +1312,7 @@ function HistoryView({ entries, setEntries, unit, onEdit }) {
 }
 
 /* ---------- Lifts (per-exercise progress) ---------- */
-function Lifts({ entries, unit }) {
+function Lifts({ entries, setEntries, unit }) {
   const index = useMemo(() => buildIndex(entries), [entries]);
   const [name, setName] = useState(() => {
     const last = [...entries].sort((a, b) => a.date < b.date ? 1 : -1)[0];
@@ -1166,7 +1330,7 @@ function Lifts({ entries, unit }) {
         date, rows,
         weight: Math.max(...rows.map(r => r.weight)),
         e1rm: Math.max(...rows.map(r => e1rm(r.weight, r.reps))),
-        volume: rows.reduce((s, r) => s + r.sets * r.reps * r.weight, 0),
+        volume: rows.reduce((s, r) => s + r.sets * r.reps * r.weight * (r.mult || 1), 0),
       };
     });
   }, [entries, k]);
@@ -1178,6 +1342,8 @@ function Lifts({ entries, unit }) {
   const bestW = all.reduce((b, s) => s.weight > b.v ? { v:s.weight, d:s.date } : b, { v:0, d:'' });
   const bestE = all.reduce((b, s) => Math.round(s.e1rm) > b.v ? { v:Math.round(s.e1rm), d:s.date } : b, { v:0, d:'' });
   const metricName = metric === 'weight' ? 'Top weight' : metric === 'e1rm' ? 'Est. 1RM' : 'Volume';
+  const sideAll = sessions.length > 0 && sessions.every(s => s.rows.every(r => r.mult === 2));
+  const toggleSide = () => setEntries(es => es.map(e => norm(e.exercise) === k ? { ...e, mult: sideAll ? 1 : 2 } : e));
 
   if (entries.length === 0) return <div className="card empty">Log some sets to see progress for each exercise.</div>;
 
@@ -1192,6 +1358,13 @@ function Lifts({ entries, unit }) {
         <div className="card empty">No sessions found for that exercise. Pick one from the list.</div>
       ) : (
         <>
+          <div className="card" style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12}}>
+            <div>
+              <b>Weight is per side</b>
+              <div className="note" style={{margin:'2px 0 0'}}>Counts tonnage ×2 for all {sessions.reduce((n, s) => n + s.rows.length, 0)} logged rows of this exercise. Weights and records still show what you entered.</div>
+            </div>
+            <button type="button" className={'chip' + (sideAll ? ' on' : '')} aria-pressed={sideAll} onClick={toggleSide}>{sideAll ? 'On' : 'Off'}</button>
+          </div>
           <div className="stats">
             <div className="stat"><span className="num">{bestW.v ? bestW.v : '–'}</span><small>Best weight ({unit})</small><small>{bestW.d ? short(bestW.d) : 'none logged'}</small></div>
             <div className="stat"><span className="num">{bestE.v ? bestE.v : '–'}</span><small>Est. 1RM ({unit})</small><small>{bestE.d ? short(bestE.d) : 'none logged'}</small></div>
@@ -1245,7 +1418,7 @@ function Settings({ entries, setEntries, prefs, setPrefs, toast, loadSample, bac
       const arr = Array.isArray(data) ? data : data.entries;
       if (!Array.isArray(arr)) throw new Error();
       const clean = arr.filter(e => e && e.date && e.muscle && e.exercise && e.sets > 0 && e.reps > 0)
-        .map(e => ({ id:e.id || uid(), date:e.date, muscle:e.muscle, exercise:String(e.exercise), sets:+e.sets, reps:+e.reps, weight:+e.weight || 0 }));
+        .map(e => ({ id:e.id || uid(), date:e.date, muscle:e.muscle, exercise:String(e.exercise), sets:+e.sets, reps:+e.reps, weight:+e.weight || 0, mult: +e.mult === 2 ? 2 : 1 }));
       const have = new Set(entries.map(x => x.id));
       const fresh = clean.filter(e => !have.has(e.id));
       setEntries(es => [...es, ...fresh]);
@@ -1359,7 +1532,7 @@ function App() {
   const [msg, setMsg] = useState(null);
   const [editId, setEditId] = useState(null);
   const timer = useRef();
-  const [form, setForm] = useState({ date:today(), muscle:'Chest', exercise:'', rows:[{ id:uid(), sets:'3', reps:'10', weight:'' }] });
+  const [form, setForm] = useState({ date:today(), muscle:'Chest', exercise:'', perSide:false, rows:[{ id:uid(), sets:'3', reps:'10', weight:'' }] });
 
   useEffect(() => store.set('vol.entries', JSON.stringify(entries)), [entries]);
   useEffect(() => store.set('vol.prefs', JSON.stringify(prefs)), [prefs]);
@@ -1404,7 +1577,7 @@ function App() {
 
       {tab === 'dash' && <Dashboard entries={entries} prefs={prefs} setPrefs={setPrefs} goLog={() => go('log')} goSettings={() => go('set')} loadSample={loadSample} backup={backup}/>}
       {tab === 'log' && <Log entries={entries} setEntries={setEntries} form={form} setForm={setForm} unit={prefs.unit} toast={toast} onEdit={setEditId}/>}
-      {tab === 'lifts' && <Lifts entries={entries} unit={prefs.unit}/>}
+      {tab === 'lifts' && <Lifts entries={entries} setEntries={setEntries} unit={prefs.unit}/>}
       {tab === 'hist' && <HistoryView entries={entries} setEntries={setEntries} unit={prefs.unit} onEdit={setEditId}/>}
       {tab === 'set' && <Settings entries={entries} setEntries={setEntries} prefs={prefs} setPrefs={setPrefs} toast={toast} loadSample={loadSample} backup={backup}/>}
 
